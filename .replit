@@ -32,4 +32,4 @@ localPort = 8081
 externalPort = 80
 
 [nix]
-packages = ["unzipNLS"]
+packages = ["unzipNLS", "zip"]
