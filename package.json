@@ -1,0 +1,21 @@
+{
+  "name": "discord-economy-bot",
+  "version": "1.0.0",
+  "description": "A full-featured economy & trading game bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "deploy": "node deploy-commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "mongoose": "^8.5.1",
+    "dotenv": "^16.4.5",
+    "quickchart-js": "^3.1.3",
+    "ms": "^2.1.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
