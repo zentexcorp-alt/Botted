@@ -99,3 +99,33 @@ module.exports = {
   checkCooldown,
   calcNetWorth,
 };
+
+const { calculateTax } = require('./tax');
+const Tax = require('../models/Tax');
+
+async function applyTax(amount, netWorth, guildId) {
+  if (!guildId) return { afterTax: amount, taxAmount: 0 };
+  const taxAmount = calculateTax(amount, netWorth);
+  if (taxAmount <= 0) return { afterTax: amount, taxAmount: 0 };
+
+  const tax = await Tax.findOne({ guildId });
+  if (tax) {
+    tax.taxVault += taxAmount;
+    tax.totalCollected += taxAmount;
+    await tax.save();
+  }
+
+  return { afterTax: amount - taxAmount, taxAmount };
+}
+
+module.exports = {
+  getOrCreateUser,
+  formatMoney,
+  formatPercent,
+  priceChange,
+  formatDuration,
+  randInt,
+  checkCooldown,
+  calcNetWorth,
+  applyTax,
+};
