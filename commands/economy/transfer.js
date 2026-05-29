@@ -1,13 +1,10 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { getOrCreateUser, formatMoney } = require('../../utils/helpers');
 
-const ACCOUNTS = ['wallet', 'bank', 'cryptoBalance', 'stockBalance', 'casinoBalance'];
-const LABEL = {
+const ACCOUNTS = {
   wallet: '🪙 Wallet',
   bank: '🏦 Bank',
-  cryptoBalance: '₿ Crypto',
-  stockBalance: '📈 Stock',
-  casinoBalance: '🎰 Casino',
+  tradingAccount: '📈 Trading Account',
 };
 
 module.exports = {
@@ -15,29 +12,19 @@ module.exports = {
     .setName('transfer')
     .setDescription('Transfer funds between your accounts')
     .addStringOption((o) =>
-      o
-        .setName('from')
-        .setDescription('Source account')
-        .setRequired(true)
+      o.setName('from').setDescription('Source account').setRequired(true)
         .addChoices(
-          { name: 'Wallet', value: 'wallet' },
-          { name: 'Bank', value: 'bank' },
-          { name: 'Crypto Account', value: 'cryptoBalance' },
-          { name: 'Stock Account', value: 'stockBalance' },
-          { name: 'Casino Account', value: 'casinoBalance' }
+          { name: '🪙 Wallet', value: 'wallet' },
+          { name: '🏦 Bank', value: 'bank' },
+          { name: '📈 Trading Account', value: 'tradingAccount' }
         )
     )
     .addStringOption((o) =>
-      o
-        .setName('to')
-        .setDescription('Destination account')
-        .setRequired(true)
+      o.setName('to').setDescription('Destination account').setRequired(true)
         .addChoices(
-          { name: 'Wallet', value: 'wallet' },
-          { name: 'Bank', value: 'bank' },
-          { name: 'Crypto Account', value: 'cryptoBalance' },
-          { name: 'Stock Account', value: 'stockBalance' },
-          { name: 'Casino Account', value: 'casinoBalance' }
+          { name: '🪙 Wallet', value: 'wallet' },
+          { name: '🏦 Bank', value: 'bank' },
+          { name: '📈 Trading Account', value: 'tradingAccount' }
         )
     )
     .addNumberOption((o) =>
@@ -55,7 +42,7 @@ module.exports = {
 
     if (user[from] < amount) {
       return interaction.reply({
-        content: `❌ Insufficient funds. ${LABEL[from]} has ${formatMoney(user[from])}.`,
+        content: `❌ Insufficient funds. ${ACCOUNTS[from]} has **${formatMoney(user[from])}**.`,
         ephemeral: true,
       });
     }
@@ -68,8 +55,8 @@ module.exports = {
       .setColor(0x00ff88)
       .setTitle('✅ Transfer Successful')
       .addFields(
-        { name: 'From', value: `${LABEL[from]}: ${formatMoney(user[from] + amount)} → ${formatMoney(user[from])}`, inline: true },
-        { name: 'To', value: `${LABEL[to]}: ${formatMoney(user[to] - amount)} → ${formatMoney(user[to])}`, inline: true },
+        { name: 'From', value: `${ACCOUNTS[from]}: **${formatMoney(user[from])}**`, inline: true },
+        { name: 'To', value: `${ACCOUNTS[to]}: **${formatMoney(user[to])}**`, inline: true },
         { name: 'Amount', value: `**${formatMoney(amount)}**`, inline: false }
       );
 
