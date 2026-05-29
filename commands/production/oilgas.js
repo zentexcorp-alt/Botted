@@ -181,7 +181,7 @@ module.exports = {
           totalOil > 0 ? { name: '🛢️ Oil Collected', value: `${totalOil.toFixed(2)} barrels (~${formatMoney(totalOil * oilPrice)})`, inline: true } : null,
           totalGas > 0 ? { name: '⛽ Gas Collected', value: `${totalGas.toFixed(2)} units (~${formatMoney(totalGas * gasPrice)})`, inline: true } : null,
           { name: '🏭 Fields Collected', value: `${collected}`, inline: true }
-        ).filter(Boolean as any);
+        ).filter(Boolean);
 
       return interaction.editReply({ embeds: [embed] });
     }

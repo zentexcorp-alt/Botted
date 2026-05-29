@@ -161,12 +161,10 @@ module.exports = {
         .setTitle('⛏️ Mine Production Collected!')
         .setDescription('Resources added to your **Warehouse**!')
         .addFields(
-          [
-            totalGold > 0 ? { name: '🥇 Gold Collected', value: `${totalGold.toFixed(4)} oz (~${formatMoney(totalGold * goldPrice)})`, inline: true } : null,
-            totalSilver > 0 ? { name: '🥈 Silver Collected', value: `${totalSilver.toFixed(4)} oz (~${formatMoney(totalSilver * silverPrice)})`, inline: true } : null,
-            { name: '⛏️ Mines Collected', value: `${collected}`, inline: true }
-          ].filter(Boolean)
-        );
+          totalGold > 0 ? { name: '🥇 Gold Collected', value: `${totalGold.toFixed(4)} oz (~${formatMoney(totalGold * goldPrice)})`, inline: true } : null,
+          totalSilver > 0 ? { name: '🥈 Silver Collected', value: `${totalSilver.toFixed(4)} oz (~${formatMoney(totalSilver * silverPrice)})`, inline: true } : null,
+          { name: '⛏️ Mines Collected', value: `${collected}`, inline: true }
+        ).filter(Boolean);
 
       return interaction.editReply({ embeds: [embed] });
     }
