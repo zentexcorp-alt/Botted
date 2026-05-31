@@ -33,25 +33,41 @@ module.exports = {
     await interaction.deferReply();
     const sub = interaction.options.getSubcommand();
 
+    // ── LIST ───────────────────────────────────────────────────────────────
     if (sub === 'list') {
       const assets = await Asset.find({ type: 'stock', active: true }).sort({ marketCap: -1 });
       if (assets.length === 0) return interaction.editReply('❌ No stocks listed yet.');
 
       const lines = assets.map((a) => {
         const chg = priceChange(a.currentPrice, a.previousPrice);
-        return `${chg >= 0 ? '🟢' : '🔴'} **${a.symbol}** (${a.name}) — ${formatMoney(a.currentPrice)} (${formatPercent(chg)}) | Sector: ${a.sector}`;
+        const chg24 = a.openPrice ? priceChange(a.currentPrice, a.openPrice) : 0;
+        const arrow = chg >= 0 ? '▲' : '▼';
+        const bar = chg24 >= 5 ? '█████' : chg24 >= 2 ? '████░' : chg24 >= 0 ? '███░░' : chg24 >= -2 ? '██░░░' : chg24 >= -5 ? '█░░░░' : '░░░░░';
+        return [
+          `**${a.symbol}** — ${a.name}`,
+          `\`${formatMoney(a.currentPrice).padEnd(12)} ${arrow} ${formatPercent(chg).padStart(8)}\` \`${bar}\``,
+          `Sector: ${a.sector} | MCap: ${formatMoney(a.marketCap)}`,
+        ].join('\n');
       });
+
+      const gainers = assets.filter((a) => a.currentPrice >= a.previousPrice).length;
 
       const embed = new EmbedBuilder()
         .setColor(0x1e90ff)
         .setTitle('📈 Stock Market')
-        .setDescription(lines.join('\n'))
-        .setFooter({ text: 'Prices update every minute' })
+        .setDescription(lines.join('\n\n'))
+        .addFields({
+          name: 'Market Summary',
+          value: `🟢 ${gainers} Gainers   🔴 ${assets.length - gainers} Losers`,
+          inline: false,
+        })
+        .setFooter({ text: 'Prices update every 60 seconds • Use /stocks price <symbol> for details' })
         .setTimestamp();
 
       return interaction.editReply({ embeds: [embed] });
     }
 
+    // ── PRICE ──────────────────────────────────────────────────────────────
     if (sub === 'price') {
       const symbol = interaction.options.getString('symbol').toUpperCase();
       const asset = await Asset.findOne({ symbol, type: 'stock', active: true });
@@ -77,6 +93,7 @@ module.exports = {
       return interaction.editReply({ embeds: [embed] });
     }
 
+    // ── BUY ────────────────────────────────────────────────────────────────
     if (sub === 'buy') {
       const symbol = interaction.options.getString('symbol').toUpperCase();
       const shares = interaction.options.getNumber('shares');
@@ -140,6 +157,7 @@ module.exports = {
       return interaction.editReply({ embeds: [embed] });
     }
 
+    // ── SELL ───────────────────────────────────────────────────────────────
     if (sub === 'sell') {
       const symbol = interaction.options.getString('symbol').toUpperCase();
       const shares = interaction.options.getNumber('shares');
@@ -194,6 +212,7 @@ module.exports = {
       return interaction.editReply({ embeds: [embed] });
     }
 
+    // ── PORTFOLIO ──────────────────────────────────────────────────────────
     if (sub === 'portfolio') {
       const user = await getOrCreateUser(interaction.user.id, interaction.user.username);
       const holdings = user.stockHoldings.filter((h) => h.quantity > 0);
@@ -212,20 +231,26 @@ module.exports = {
         const value = parseFloat((h.quantity * a.currentPrice).toFixed(2));
         const cost = parseFloat((h.quantity * h.avgBuyPrice).toFixed(2));
         const pnl = parseFloat((value - cost).toFixed(2));
+        const pnlPct = priceChange(a.currentPrice, h.avgBuyPrice);
+        const pnlEmoji = pnl >= 0 ? '🟢' : '🔴';
         totalValue += value;
         totalCost += cost;
-        lines.push(`**${h.symbol}** — ${h.quantity} shares | Value: ${formatMoney(value)} | P&L: ${formatMoney(pnl)} (${formatPercent(priceChange(a.currentPrice, h.avgBuyPrice))})`);
+        lines.push(
+          `${pnlEmoji} **${h.symbol}** — ${h.quantity} shares\n` +
+          `💰 ${formatMoney(value)} | Avg: ${formatMoney(h.avgBuyPrice)} | P&L: ${formatMoney(pnl)} (${formatPercent(pnlPct)})`
+        );
       }
 
       const totalPnl = parseFloat((totalValue - totalCost).toFixed(2));
+      const totalPnlPct = totalCost > 0 ? ((totalPnl / totalCost) * 100) : 0;
 
       const embed = new EmbedBuilder()
         .setColor(totalPnl >= 0 ? 0x00ff88 : 0xff4545)
         .setTitle('📈 Stock Portfolio')
-        .setDescription(lines.join('\n'))
+        .setDescription(lines.join('\n\n'))
         .addFields(
           { name: 'Total Value', value: formatMoney(totalValue), inline: true },
-          { name: 'Total P&L', value: formatMoney(totalPnl), inline: true },
+          { name: 'Total P&L', value: `${formatMoney(totalPnl)} (${formatPercent(totalPnlPct)})`, inline: true },
           { name: 'Trading Account', value: formatMoney(user.tradingAccount), inline: true }
         );
 

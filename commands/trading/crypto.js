@@ -33,25 +33,41 @@ module.exports = {
     await interaction.deferReply();
     const sub = interaction.options.getSubcommand();
 
+    // ── LIST ───────────────────────────────────────────────────────────────
     if (sub === 'list') {
       const assets = await Asset.find({ type: 'crypto', active: true }).sort({ marketCap: -1 });
       if (assets.length === 0) return interaction.editReply('❌ No cryptocurrencies listed yet.');
 
-      const lines = assets.map((a) => {
+      const lines = assets.map((a, i) => {
         const chg = priceChange(a.currentPrice, a.previousPrice);
-        return `${chg >= 0 ? '🟢' : '🔴'} **${a.symbol}** — ${formatMoney(a.currentPrice)} (${formatPercent(chg)}) | MCap: ${formatMoney(a.marketCap)}`;
+        const chg24 = a.openPrice ? priceChange(a.currentPrice, a.openPrice) : 0;
+        const arrow = chg >= 0 ? '▲' : '▼';
+        const rankEmoji = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**${i + 1}.**`;
+        return [
+          `${rankEmoji} **${a.symbol}** — ${a.name}`,
+          `\`${formatMoney(a.currentPrice).padEnd(14)} ${arrow} ${formatPercent(chg24).padStart(8)}\``,
+          `MCap: ${formatMoney(a.marketCap)} | Vol: ${formatMoney(a.totalVolume24h)}`,
+        ].join('\n');
       });
+
+      const totalMCap = assets.reduce((a, x) => a + x.marketCap, 0);
+      const gainers = assets.filter((a) => a.currentPrice >= a.previousPrice).length;
 
       const embed = new EmbedBuilder()
         .setColor(0xf7931a)
-        .setTitle('₿ Cryptocurrency Market')
-        .setDescription(lines.join('\n'))
-        .setFooter({ text: 'Prices update every minute' })
+        .setTitle('₿ Crypto Market')
+        .setDescription(lines.join('\n\n'))
+        .addFields(
+          { name: '💎 Total Market Cap', value: formatMoney(totalMCap), inline: true },
+          { name: '🟢 Gainers / 🔴 Losers', value: `${gainers} / ${assets.length - gainers}`, inline: true },
+        )
+        .setFooter({ text: 'Prices update every 60 seconds' })
         .setTimestamp();
 
       return interaction.editReply({ embeds: [embed] });
     }
 
+    // ── PRICE ──────────────────────────────────────────────────────────────
     if (sub === 'price') {
       const symbol = interaction.options.getString('symbol').toUpperCase();
       const asset = await Asset.findOne({ symbol, type: 'crypto', active: true });
@@ -77,6 +93,7 @@ module.exports = {
       return interaction.editReply({ embeds: [embed] });
     }
 
+    // ── BUY ────────────────────────────────────────────────────────────────
     if (sub === 'buy') {
       const symbol = interaction.options.getString('symbol').toUpperCase();
       const quantity = interaction.options.getNumber('quantity');
@@ -142,6 +159,7 @@ module.exports = {
       return interaction.editReply({ embeds: [embed] });
     }
 
+    // ── SELL ───────────────────────────────────────────────────────────────
     if (sub === 'sell') {
       const symbol = interaction.options.getString('symbol').toUpperCase();
       const quantity = interaction.options.getNumber('quantity');
@@ -196,6 +214,7 @@ module.exports = {
       return interaction.editReply({ embeds: [embed] });
     }
 
+    // ── PORTFOLIO ──────────────────────────────────────────────────────────
     if (sub === 'portfolio') {
       const user = await getOrCreateUser(interaction.user.id, interaction.user.username);
       const holdings = user.cryptoHoldings.filter((h) => h.quantity > 0);
@@ -214,20 +233,26 @@ module.exports = {
         const value = parseFloat((h.quantity * a.currentPrice).toFixed(2));
         const cost = parseFloat((h.quantity * h.avgBuyPrice).toFixed(2));
         const pnl = parseFloat((value - cost).toFixed(2));
+        const pnlPct = priceChange(a.currentPrice, h.avgBuyPrice);
+        const pnlEmoji = pnl >= 0 ? '🟢' : '🔴';
         totalValue += value;
         totalCost += cost;
-        lines.push(`**${h.symbol}** — ${h.quantity} coins | Value: ${formatMoney(value)} | P&L: ${formatMoney(pnl)} (${formatPercent(priceChange(a.currentPrice, h.avgBuyPrice))})`);
+        lines.push(
+          `${pnlEmoji} **${h.symbol}** — ${h.quantity} coins\n` +
+          `💰 ${formatMoney(value)} | Avg: ${formatMoney(h.avgBuyPrice)} | P&L: ${formatMoney(pnl)} (${formatPercent(pnlPct)})`
+        );
       }
 
       const totalPnl = parseFloat((totalValue - totalCost).toFixed(2));
+      const totalPnlPct = totalCost > 0 ? ((totalPnl / totalCost) * 100) : 0;
 
       const embed = new EmbedBuilder()
         .setColor(totalPnl >= 0 ? 0x00ff88 : 0xff4545)
         .setTitle('₿ Crypto Portfolio')
-        .setDescription(lines.join('\n'))
+        .setDescription(lines.join('\n\n'))
         .addFields(
           { name: 'Total Value', value: formatMoney(totalValue), inline: true },
-          { name: 'Total P&L', value: formatMoney(totalPnl), inline: true },
+          { name: 'Total P&L', value: `${formatMoney(totalPnl)} (${formatPercent(totalPnlPct)})`, inline: true },
           { name: 'Trading Account', value: formatMoney(user.tradingAccount), inline: true }
         );
 

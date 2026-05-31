@@ -1,47 +1,38 @@
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
 const { getOrCreateUser, formatMoney, formatPercent, priceChange, calcNetWorth } = require('../../utils/helpers');
 const { xpForLevel } = require('../../utils/jobs');
-const { getTaxBracket } = require('../../utils/tax');
-const { getActiveEvents } = require('../../utils/worldEvents');
 const Asset = require('../../models/Asset');
 const Clan = require('../../models/Clan');
-const DailyStreak = require('../../models/DailyStreak');
-const Transaction = require('../../models/Transaction');
+const Production = require('../../models/Production');
+const Warehouse = require('../../models/Warehouse');
 const QuickChart = require('quickchart-js');
+const Transaction = require('../../models/Transaction');
 
 async function generateNetWorthGraph(userId) {
   try {
-    const transactions = await Transaction.find({ userId })
-      .sort({ timestamp: 1 })
-      .limit(30);
-
+    const transactions = await Transaction.find({ userId }).sort({ timestamp: 1 }).limit(50);
     if (transactions.length < 2) return null;
 
-    // Build net worth over time from transactions
-    let running = 1000; // start balance
-    const points = [{ t: transactions[0].timestamp, v: running }];
-
+    let running = 1000;
+    const points = [running];
     for (const tx of transactions) {
-      const isIncome = ['sell_crypto', 'sell_stock', 'casino_win', 'work', 'daily', 'interest'].includes(tx.type);
+      const isIncome = ['sell_crypto', 'sell_stock', 'sell_commodity', 'work', 'daily'].includes(tx.type);
       running += isIncome ? tx.total : -tx.total;
       running = Math.max(0, running);
-      points.push({ t: tx.timestamp, v: running });
+      points.push(Math.round(running));
     }
 
-    const labels = points.map((_, i) => `${i + 1}`);
-    const data = points.map((p) => Math.round(p.v));
-    const isUp = data[data.length - 1] >= data[0];
-
+    const isUp = points[points.length - 1] >= points[0];
     const chart = new QuickChart();
-    chart.setWidth(600).setHeight(200).setBackgroundColor('#1a1a2e');
+    chart.setWidth(600).setHeight(150).setBackgroundColor('#0d1117');
     chart.setConfig({
       type: 'line',
       data: {
-        labels,
+        labels: points.map((_, i) => i),
         datasets: [{
-          data,
-          borderColor: isUp ? 'rgb(0, 210, 110)' : 'rgb(255, 65, 65)',
-          backgroundColor: isUp ? 'rgba(0, 210, 110, 0.1)' : 'rgba(255, 65, 65, 0.1)',
+          data: points,
+          borderColor: isUp ? '#00ff88' : '#ff4545',
+          backgroundColor: isUp ? 'rgba(0,255,136,0.08)' : 'rgba(255,69,69,0.08)',
           fill: true,
           tension: 0.4,
           pointRadius: 0,
@@ -50,27 +41,23 @@ async function generateNetWorthGraph(userId) {
       },
       options: {
         legend: { display: false },
-        title: { display: true, text: 'Net Worth History', fontColor: '#e0e0e0', fontSize: 12 },
         scales: {
-          xAxes: [{ ticks: { display: false }, gridLines: { display: false } }],
-          yAxes: [{ ticks: { fontColor: '#aaa', callback: (v) => `$${Number(v).toLocaleString()}` }, gridLines: { color: 'rgba(255,255,255,0.05)' } }],
+          xAxes: [{ display: false }],
+          yAxes: [{ display: false }],
         },
       },
     });
 
-    const url = chart.getUrl();
-    const res = await fetch(url);
+    const res = await fetch(chart.getUrl());
     if (!res.ok) return null;
     return Buffer.from(await res.arrayBuffer());
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('profile')
-    .setDescription('View your full financial profile')
+    .setDescription('View your financial profile')
     .addUserOption((o) => o.setName('user').setDescription('User to view')),
 
   async execute(interaction) {
@@ -83,134 +70,84 @@ module.exports = {
     assets.forEach((a) => (assetMap[a.symbol] = a));
 
     const netWorth = await calcNetWorth(user, assetMap);
-
-    // Get clan
     const clan = await Clan.findOne({ 'members.userId': target.id });
-    const clanTag = clan ? `[${clan.tag}] ${clan.name}` : null;
+    const productions = await Production.find({ userId: target.id, active: true });
+    const warehouse = await Warehouse.findOne({ userId: target.id });
 
-    // Get streak
-    const streak = await DailyStreak.findOne({ userId: target.id });
+    const xpPct = Math.floor((user.xp / user.xpToNextLevel) * 20);
+    const xpBar = '▰'.repeat(xpPct) + '▱'.repeat(20 - xpPct);
 
-    // Tax bracket
-    const taxBracket = getTaxBracket(netWorth);
+    // Holdings value
+    let holdingsValue = 0;
+    user.cryptoHoldings.forEach((h) => { holdingsValue += h.quantity * (assetMap[h.symbol]?.currentPrice || 0); });
+    user.stockHoldings.forEach((h) => { holdingsValue += h.quantity * (assetMap[h.symbol]?.currentPrice || 0); });
+    user.commodityHoldings.forEach((h) => { holdingsValue += h.quantity * (assetMap[h.symbol]?.currentPrice || 0); });
 
-    // XP bar
-    const xpPct = Math.floor((user.xp / user.xpToNextLevel) * 15);
-    const xpBar = '█'.repeat(xpPct) + '░'.repeat(15 - xpPct);
-
-    // Holdings summary
-    const cryptoHoldings = user.cryptoHoldings.filter((h) => h.quantity > 0);
-    const stockHoldings = user.stockHoldings.filter((h) => h.quantity > 0);
-
-    let totalHoldingsValue = 0;
-    const cryptoLines = cryptoHoldings.map((h) => {
-      const price = assetMap[h.symbol]?.currentPrice || 0;
-      const value = h.quantity * price;
-      const pnlPct = priceChange(price, h.avgBuyPrice);
-      totalHoldingsValue += value;
-      return `• **${h.symbol}**: ${h.quantity.toFixed(4)} | ${formatMoney(value)} (${formatPercent(pnlPct)})`;
-    });
-
-    const stockLines = stockHoldings.map((h) => {
-      const price = assetMap[h.symbol]?.currentPrice || 0;
-      const value = h.quantity * price;
-      const pnlPct = priceChange(price, h.avgBuyPrice);
-      totalHoldingsValue += value;
-      return `• **${h.symbol}**: ${h.quantity.toFixed(2)} sh | ${formatMoney(value)} (${formatPercent(pnlPct)})`;
-    });
-
-    // Active world events
-    const activeEvents = interaction.guildId ? await getActiveEvents(interaction.guildId) : [];
-    const eventLines = activeEvents.map((e) => {
-      const mins = Math.floor((new Date(e.endsAt) - Date.now()) / 60000);
-      return `${e.name} — ${mins}m left`;
-    });
+    // Warehouse value
+    let warehouseValue = 0;
+    if (warehouse) {
+      warehouse.items.forEach((i) => { warehouseValue += i.quantity * (assetMap[i.symbol]?.currentPrice || 0); });
+    }
 
     const embed = new EmbedBuilder()
-      .setColor(0x5865f2)
-      .setTitle(`📊 ${target.username}'s Profile`)
+      .setColor(0x0d1117)
+      .setAuthor({ name: `${target.username}'s Profile`, iconURL: target.displayAvatarURL() })
       .setThumbnail(target.displayAvatarURL())
+      .setDescription([
+        clan ? `⚔️ **[${clan.tag}] ${clan.name}**` : '⚔️ *No Clan*',
+        `⭐ **Level ${user.level}** — \`${xpBar}\` ${user.xp}/${user.xpToNextLevel} XP`,
+        `💼 **Job:** ${user.job || '*Unemployed*'}`,
+        '',
+        '```',
+        `💎 NET WORTH    ${formatMoney(netWorth).padStart(20)}`,
+        '```',
+      ].join('\n'))
       .addFields(
-        // Clan tag and level
         {
-          name: '⚔️ Clan',
-          value: clanTag ? `**${clanTag}**` : '*No Clan*',
-          inline: true,
-        },
-        {
-          name: '⭐ Level',
-          value: `**${user.level}**`,
-          inline: true,
-        },
-        {
-          name: '🔥 Daily Streak',
-          value: streak ? `**${streak.currentStreak} days**` : '0 days',
-          inline: true,
-        },
-
-        // XP Bar
-        {
-          name: `XP Progress`,
-          value: `\`${xpBar}\` ${user.xp}/${user.xpToNextLevel}`,
-          inline: false,
-        },
-
-        // Net worth (big and prominent)
-        {
-          name: '💎 Net Worth',
-          value: `# ${formatMoney(netWorth)}`,
-          inline: false,
-        },
-
-        // Balances
-        {
-          name: '💰 Balances',
+          name: '━━━ 💳 Accounts ━━━',
           value: [
-            `🪙 Wallet: **${formatMoney(user.wallet)}**`,
-            `🏦 Bank: **${formatMoney(user.bank)}**`,
-            `₿ Crypto: **${formatMoney(user.cryptoBalance)}**`,
-            `📈 Stocks: **${formatMoney(user.stockBalance)}**`,
-            `🎰 Casino: **${formatMoney(user.casinoBalance)}**`,
+            `🪙 **Wallet**         ${formatMoney(user.wallet)}`,
+            `🏦 **Bank**           ${formatMoney(user.bank)}`,
+            `📈 **Trading**        ${formatMoney(user.tradingAccount)}`,
           ].join('\n'),
-          inline: true,
+          inline: false,
         },
-
-        // Stats
         {
-          name: '📊 Stats',
+          name: '━━━ 📊 Assets ━━━',
           value: [
-            `💼 Job: **${user.job || 'None'}**`,
+            `📦 **Holdings**       ${formatMoney(holdingsValue)}`,
+            `🏭 **Warehouse**      ${formatMoney(warehouseValue)}`,
+          ].join('\n'),
+          inline: false,
+        },
+        {
+          name: '━━━ 🏭 Production ━━━',
+          value: productions.length > 0
+            ? productions.map((p) => {
+                const emoji = { oil_field: '🛢️', gas_field: '⛽', gold_mine: '🥇', silver_mine: '🥈', crop_farm: '🌾' }[p.type] || '🏭';
+                return `${emoji} **${p.name}** — ${p.outputPerHour}/hr`;
+              }).join('\n')
+            : '*No production assets*',
+          inline: false,
+        },
+        {
+          name: '━━━ 📈 Stats ━━━',
+          value: [
             `🔄 Trades: **${user.totalTrades}**`,
             `💸 Earned: **${formatMoney(user.totalEarned)}**`,
-            `🎰 Casino: **${user.casinoWins}W/${user.casinoLosses}L**`,
-            `💳 Tax Bracket: **${taxBracket.label}**`,
+            `🛒 Spent: **${formatMoney(user.totalSpent)}**`,
           ].join('\n'),
-          inline: true,
-        },
-      );
+          inline: false,
+        }
+      )
+      .setFooter({ text: `MelonMarket • Member since ${user.createdAt.toDateString()}` });
 
-    // Holdings
-    if (cryptoLines.length > 0) {
-      embed.addFields({ name: '₿ Crypto Holdings', value: cryptoLines.join('\n'), inline: false });
-    }
-    if (stockLines.length > 0) {
-      embed.addFields({ name: '📈 Stock Holdings', value: stockLines.join('\n'), inline: false });
-    }
-
-    // Active events
-    if (eventLines.length > 0) {
-      embed.addFields({ name: '🌍 Active World Events', value: eventLines.join('\n'), inline: false });
-    }
-
-    embed.setFooter({ text: `Member since ${user.createdAt.toDateString()} • Total Holdings Value: ${formatMoney(totalHoldingsValue)}` });
-
-    // Generate net worth graph
     const graphBuffer = await generateNetWorthGraph(target.id);
     const files = [];
 
     if (graphBuffer) {
-      const attachment = new AttachmentBuilder(graphBuffer, { name: 'networth_graph.png' });
-      embed.setImage('attachment://networth_graph.png');
+      const attachment = new AttachmentBuilder(graphBuffer, { name: 'graph.png' });
+      embed.setImage('attachment://graph.png');
       files.push(attachment);
     }
 

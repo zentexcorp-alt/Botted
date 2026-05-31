@@ -66,6 +66,30 @@ async function seed() {
     } else console.log(`⏭ Skipped: ${s.symbol}`);
   }
 
+const PROCESSED_GOODS = [
+  { symbol: 'RFUEL', name: 'Refined Fuel', currentPrice: 212, volatility: 0.04, commodityCategory: 'energy', unit: 'unit', description: 'Refined from crude oil', sector: 'Energy', totalSupply: 500_000_000, circulatingSupply: 200_000_000 },
+  { symbol: 'LGAS', name: 'Liquefied Gas', currentPrice: 7, volatility: 0.05, commodityCategory: 'energy', unit: 'unit', description: 'Processed natural gas', sector: 'Energy', totalSupply: 1_000_000_000, circulatingSupply: 500_000_000 },
+  { symbol: 'XAUB', name: 'Gold Bar', currentPrice: 6000, volatility: 0.02, commodityCategory: 'metals', unit: 'oz', description: 'Refined gold bar', sector: 'Metals', totalSupply: 50_000_000, circulatingSupply: 30_000_000 },
+  { symbol: 'XAGB', name: 'Silver Bar', currentPrice: 62, volatility: 0.025, commodityCategory: 'metals', unit: 'oz', description: 'Refined silver bar', sector: 'Metals', totalSupply: 200_000_000, circulatingSupply: 150_000_000 },
+  { symbol: 'ETHN', name: 'Ethanol', currentPrice: 12.5, volatility: 0.04, commodityCategory: 'agriculture', unit: 'unit', description: 'Processed from corn', sector: 'Agriculture', totalSupply: 10_000_000_000, circulatingSupply: 5_000_000_000 },
+  { symbol: 'FLUR', name: 'Flour', currentPrice: 12, volatility: 0.03, commodityCategory: 'agriculture', unit: 'unit', description: 'Milled from wheat', sector: 'Agriculture', totalSupply: 8_000_000_000, circulatingSupply: 4_000_000_000 },
+  { symbol: 'RCFF', name: 'Roasted Coffee', currentPrice: 5.4, volatility: 0.05, commodityCategory: 'agriculture', unit: 'lb', description: 'Roasted coffee beans', sector: 'Agriculture', totalSupply: 3_000_000_000, circulatingSupply: 1_500_000_000 },
+  { symbol: 'ASTL', name: 'Alloy Steel', currentPrice: 3200, volatility: 0.025, commodityCategory: 'industrial', unit: 'ton', description: 'High-grade alloy steel', sector: 'Industrial', totalSupply: 1_000_000_000, circulatingSupply: 500_000_000 },
+];
+
+for (const pg of PROCESSED_GOODS) {
+  const exists = await Asset.findOne({ symbol: pg.symbol });
+  if (!exists) {
+    await Asset.create({
+      ...pg, type: 'commodity',
+      previousPrice: pg.currentPrice, openPrice: pg.currentPrice,
+      marketCap: pg.currentPrice * pg.circulatingSupply,
+      priceHistory: [{ open: pg.currentPrice, high: pg.currentPrice * 1.005, low: pg.currentPrice * 0.995, close: pg.currentPrice }],
+    });
+    console.log(`✅ Added processed good: ${pg.symbol}`);
+  } else console.log(`⏭ Skipped: ${pg.symbol}`);
+}
+
   for (const comm of DEFAULT_COMMODITIES) {
     const exists = await Asset.findOne({ symbol: comm.symbol });
     if (!exists) {
